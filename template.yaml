@@ -61,7 +61,6 @@ Resources:
       Environment:
         Variables:
           ENVIRONMENT: !Ref Env
-          BATCH_SIZE: !Ref BatchSize
   ConfigureMachine:
     Type: AWS::Serverless::Function
     Properties:
@@ -74,7 +73,6 @@ Resources:
       Environment:
         Variables:
           ENVIRONMENT: !Ref Env
-          BATCH_SIZE: !Ref BatchSize
 
   S3Bucket:
     Type: AWS::S3::Bucket
