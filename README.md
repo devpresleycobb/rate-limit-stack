@@ -85,7 +85,7 @@ Test a single function by invoking it directly with a test event. An event is a 
 Run functions locally and invoke them with the `sam local invoke` command.
 
 ```bash
-rate-limit-stack-example$ sam local invoke ProcessRequests --event events/event.json
+rate-limit-stack-example$ sam local invoke ProcessRequests
 ```
 
 ## Fetch, tail, and filter Lambda function logs
