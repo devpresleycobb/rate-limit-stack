@@ -1,0 +1,325 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: This stack is an example of how you can stagger api request to avoid rate limits.
+
+Globals:
+  Function:
+    Runtime: python3.7
+    Handler: app.lambda_handler
+    Environment:
+      Variables:
+        REQUEST_FILE_NAME: requests.json
+        BATCH_SIZE: !Ref BatchSize
+        BUCKET_NAME: !Ref BucketName
+
+Resources:
+  SaveData:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: save_data
+      CodeUri: save_data/
+      Runtime: python3.7
+      Timeout: 25
+      Role: !GetAtt StateMachineExampleRole.Arn
+      Environment:
+        Variables:
+          ENVIRONMENT: !Ref Env
+
+  CleanupData:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: cleanup_data
+      CodeUri: cleanup_data/
+      Runtime: python3.7
+      Timeout: 25
+      Role: !GetAtt StateMachineExampleRole.Arn
+      Environment:
+        Variables:
+          ENVIRONMENT: !Ref Env
+
+  ProcessRequests:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: process_requests
+      CodeUri: process_requests/
+      Runtime: python3.7
+      Timeout: 25
+      Role: !GetAtt StateMachineExampleRole.Arn
+      Environment:
+        Variables:
+          ENVIRONMENT: !Ref Env
+
+  CollectRequests:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: collect_requests
+      CodeUri: collect_requests/
+      Handler: app.lambda_handler
+      Runtime: python3.7
+      Timeout: 10
+      Role: !GetAtt StateMachineExampleRole.Arn
+      Environment:
+        Variables:
+          ENVIRONMENT: !Ref Env
+          BATCH_SIZE: !Ref BatchSize
+  ConfigureMachine:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: configure_machine
+      CodeUri: configure_machine/
+      Handler: app.lambda_handler
+      Runtime: python3.7
+      Timeout: 10
+      Role: !GetAtt StateMachineExampleRole.Arn
+      Environment:
+        Variables:
+          ENVIRONMENT: !Ref Env
+          BATCH_SIZE: !Ref BatchSize
+
+  S3Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Ref BucketName
+
+  # Step functions state machine
+  QAStateMachine:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      StateMachineType: STANDARD
+      StateMachineName: qa_rate_limit_machine
+      DefinitionString: !Sub |
+        {
+          "Comment": "Rate Limit Step Function",
+          "StartAt": "ConfigureMachine",
+          "States": {
+            "ConfigureMachine": {
+                "Type": "Task",
+                "Resource": "${ConfigureMachine.Arn}:${Env}",
+                "ResultPath": "$.config",
+                "Next": "CollectRequests"
+            },
+            "CollectRequests": {
+                "Type": "Task",
+                "Resource": "${CollectRequests.Arn}:${Env}",
+                "ResultPath": "$.requests_key",
+                "Next": "ProcessRequests"
+            },
+            "ProcessRequests": {
+              "Type": "Task",
+              "Resource": "${ProcessRequests.Arn}:${Env}",
+              "ResultPath": "$.status",
+              "Catch": [{
+                "ErrorEquals": [ "States.TaskFailed" ],
+                "ResultPath": "$.error-info",
+                "Next": "CleanupData"
+               }],
+              "Next": "IsCountReached"
+            },
+            "IsCountReached": {
+              "Type": "Choice",
+              "Choices": [
+                {
+                  "Variable": "$.status.loop",
+                  "BooleanEquals": true,
+                  "Next": "WaitBetweenAPICalls"
+                }
+              ],
+              "Default": "SaveData"
+            },
+            "SaveData": {
+              "Type": "Task",
+              "Resource": "${SaveData.Arn}:${Env}",
+              "ResultPath": "$.results",
+              "Retry": [ {
+                 "ErrorEquals": ["States.TaskFailed"],
+                 "IntervalSeconds": 1,
+                 "MaxAttempts": 2
+              } ],
+              "Catch": [{
+                "ErrorEquals": [ "States.TaskFailed" ],
+                "ResultPath": "$.error-info",
+                "Next": "CleanupData"
+               }],
+              "Next": "CleanupData"
+            },
+            "CleanupData": {
+              "Type": "Task",
+              "Resource": "${CleanupData.Arn}:${Env}",
+              "Retry": [ {
+                 "ErrorEquals": ["States.TaskFailed"],
+                 "IntervalSeconds": 1,
+                 "MaxAttempts": 2
+              } ],
+              "Next": "Done"
+            },
+            "WaitBetweenAPICalls": {
+              "Type": "Wait",
+              "Seconds": ${WaitTime},
+              "Next": "ProcessRequests"
+            },
+            "Done": {
+              "Type": "Succeed"
+            }
+          }
+        }
+      RoleArn: !GetAtt StateMachineExampleRole.Arn
+
+  # Step functions state machine
+  PRODStateMachine:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      StateMachineType: STANDARD
+      StateMachineName: prod_rate_limit_machine
+      DefinitionString: !Sub |
+        {
+          "Comment": "Rate Limit Step Function",
+          "StartAt": "ConfigureMachine",
+          "States": {
+            "ConfigureMachine": {
+                "Type": "Task",
+                "Resource": "${ConfigureMachine.Arn}:${Env}",
+                "ResultPath": "$.config",
+                "Next": "CollectRequests"
+            },
+            "CollectRequests": {
+                "Type": "Task",
+                "Resource": "${CollectRequests.Arn}:${Env}",
+                "ResultPath": "$.requests_key",
+                "Next": "ProcessRequests"
+            },
+            "ProcessRequests": {
+              "Type": "Task",
+              "Resource": "${ProcessRequests.Arn}:${Env}",
+              "ResultPath": "$.status",
+              "Catch": [{
+                "ErrorEquals": [ "States.TaskFailed" ],
+                "ResultPath": "$.error-info",
+                "Next": "CleanupData"
+               }],
+              "Next": "IsCountReached"
+            },
+            "IsCountReached": {
+              "Type": "Choice",
+              "Choices": [
+                {
+                  "Variable": "$.status.loop",
+                  "BooleanEquals": true,
+                  "Next": "WaitBetweenAPICalls"
+                }
+              ],
+              "Default": "SaveData"
+            },
+            "SaveData": {
+              "Type": "Task",
+              "Resource": "${SaveData.Arn}:${Env}",
+              "ResultPath": "$.results",
+              "Retry": [ {
+                 "ErrorEquals": ["States.TaskFailed"],
+                 "IntervalSeconds": 1,
+                 "MaxAttempts": 2
+              } ],
+              "Catch": [{
+                "ErrorEquals": [ "States.TaskFailed" ],
+                "ResultPath": "$.error-info",
+                "Next": "CleanupData"
+               }],
+              "Next": "CleanupData"
+            },
+            "CleanupData": {
+              "Type": "Task",
+              "Resource": "${CleanupData.Arn}:${Env}",
+              "Retry": [ {
+                 "ErrorEquals": ["States.TaskFailed"],
+                 "IntervalSeconds": 1,
+                 "MaxAttempts": 2
+              } ],
+              "Next": "Done"
+            },
+            "WaitBetweenAPICalls": {
+              "Type": "Wait",
+              "Seconds": ${WaitTime},
+              "Next": "ProcessRequests"
+            },
+            "Done": {
+              "Type": "Succeed"
+            }
+          }
+        }
+      RoleArn: !GetAtt StateMachineExampleRole.Arn
+
+  # IAM role
+  StateMachineExampleRole:
+      Type: AWS::IAM::Role
+      Properties:
+        AssumeRolePolicyDocument:
+          Version: 2012-10-17
+          Statement:
+            - Effect: Allow
+              Principal:
+                Service:
+                  - lambda.amazonaws.com
+                  - states.amazonaws.com
+                  - events.amazonaws.com
+              Action:
+                - sts:AssumeRole
+  StateMachineExamplePolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: state_machine_example
+      PolicyDocument:
+        Statement:
+          - Effect: Allow
+            Action:
+            - lambda:InvokeFunction
+            - states:StartExecution
+            - logs:CreateLogGroup
+            - logs:CreateLogStream
+            - logs:PutLogEvents
+            - s3:PutObject
+            - s3:DeleteObject
+            - s3:GetObject
+            - s3:ListBucket
+            Resource:
+               - !Join [ "/", [ !GetAtt S3Bucket.Arn, "*" ] ]
+               - !GetAtt S3Bucket.Arn
+               - !Ref PRODStateMachine
+               - !Ref QAStateMachine
+               - !Join [ ":", [ !GetAtt ProcessRequests.Arn, QA ] ]
+               - !Join [ ":", [ !GetAtt ProcessRequests.Arn, PROD ] ]
+               - !Join [ ":", [ !GetAtt CollectRequests.Arn, QA ] ]
+               - !Join [ ":", [ !GetAtt CollectRequests.Arn, PROD ] ]
+               - !Join [ ":", [ !GetAtt SaveData.Arn, QA ] ]
+               - !Join [ ":", [ !GetAtt SaveData.Arn, PROD ] ]
+               - !Join [ ":", [ !GetAtt ConfigureMachine.Arn, QA ] ]
+               - !Join [ ":", [ !GetAtt ConfigureMachine.Arn, PROD ] ]
+               - !Join [ ":", [ !GetAtt CleanupData.Arn, QA ] ]
+               - !Join [ ":", [ !GetAtt CleanupData.Arn, PROD ] ]
+               - !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:*
+               - !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/process_requests:*
+               - !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/cleanup_data:*
+               - !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/collect_requests:*
+               - !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/configure_machine:*
+               - !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/save_data:*
+      Roles:
+        - Ref: StateMachineExampleRole
+
+Parameters:
+  WaitTime:
+    Type: String
+    Default: 5
+    AllowedPattern: "[1-9]+"
+  BatchSize:
+    Type: String
+    Default: 1
+    AllowedPattern: "[1-9]+"
+  BucketName:
+    Type: String
+    Default: step-function-transition-data
+    AllowedValues:
+    - step-function-transition-data
+  Env:
+    Type: String
+    Default: QA
+    AllowedValues:
+      - QA
+      - PROD
