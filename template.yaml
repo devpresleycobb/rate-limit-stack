@@ -92,19 +92,19 @@ Resources:
           "States": {
             "ConfigureMachine": {
                 "Type": "Task",
-                "Resource": "${ConfigureMachine.Arn}:${Env}",
+                "Resource": "${ConfigureMachine.Arn}:QA",
                 "ResultPath": "$.config",
                 "Next": "CollectRequests"
             },
             "CollectRequests": {
                 "Type": "Task",
-                "Resource": "${CollectRequests.Arn}:${Env}",
+                "Resource": "${CollectRequests.Arn}:QA",
                 "ResultPath": "$.requests_key",
                 "Next": "ProcessRequests"
             },
             "ProcessRequests": {
               "Type": "Task",
-              "Resource": "${ProcessRequests.Arn}:${Env}",
+              "Resource": "${ProcessRequests.Arn}:QA",
               "ResultPath": "$.status",
               "Catch": [{
                 "ErrorEquals": [ "States.TaskFailed" ],
@@ -126,7 +126,7 @@ Resources:
             },
             "SaveData": {
               "Type": "Task",
-              "Resource": "${SaveData.Arn}:${Env}",
+              "Resource": "${SaveData.Arn}:QA",
               "ResultPath": "$.results",
               "Retry": [ {
                  "ErrorEquals": ["States.TaskFailed"],
@@ -142,7 +142,7 @@ Resources:
             },
             "CleanupData": {
               "Type": "Task",
-              "Resource": "${CleanupData.Arn}:${Env}",
+              "Resource": "${CleanupData.Arn}:QA",
               "Retry": [ {
                  "ErrorEquals": ["States.TaskFailed"],
                  "IntervalSeconds": 1,
@@ -175,19 +175,19 @@ Resources:
           "States": {
             "ConfigureMachine": {
                 "Type": "Task",
-                "Resource": "${ConfigureMachine.Arn}:${Env}",
+                "Resource": "${ConfigureMachine.Arn}:PROD",
                 "ResultPath": "$.config",
                 "Next": "CollectRequests"
             },
             "CollectRequests": {
                 "Type": "Task",
-                "Resource": "${CollectRequests.Arn}:${Env}",
+                "Resource": "${CollectRequests.Arn}:PROD",
                 "ResultPath": "$.requests_key",
                 "Next": "ProcessRequests"
             },
             "ProcessRequests": {
               "Type": "Task",
-              "Resource": "${ProcessRequests.Arn}:${Env}",
+              "Resource": "${ProcessRequests.Arn}:PROD",
               "ResultPath": "$.status",
               "Catch": [{
                 "ErrorEquals": [ "States.TaskFailed" ],
@@ -209,7 +209,7 @@ Resources:
             },
             "SaveData": {
               "Type": "Task",
-              "Resource": "${SaveData.Arn}:${Env}",
+              "Resource": "${SaveData.Arn}:PROD",
               "ResultPath": "$.results",
               "Retry": [ {
                  "ErrorEquals": ["States.TaskFailed"],
@@ -225,7 +225,7 @@ Resources:
             },
             "CleanupData": {
               "Type": "Task",
-              "Resource": "${CleanupData.Arn}:${Env}",
+              "Resource": "${CleanupData.Arn}:PROD",
               "Retry": [ {
                  "ErrorEquals": ["States.TaskFailed"],
                  "IntervalSeconds": 1,
